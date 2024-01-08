@@ -1,8 +1,30 @@
 const { createServer } = require("http");
 const { Server } = require("socket.io");
+const db = require("./db/index");
+const moment = require("moment-timezone");
 const CLIENT_HOST = process.env.CLIENT_HOST || "http://localhost:3000";
 const httpServer = createServer();
 let onlineUsers = []
+
+const getNotifications = async (id) => {
+    const result = await db.connection.execute(
+        "SELECT notifications.*, accounts.fullname, class.name, CASE WHEN notifications.type = 'class' THEN class.id WHEN notifications.type = 'user' THEN accounts.id ELSE NULL END AS additionalId FROM notifications LEFT JOIN class ON notifications.type = 'class' AND class.id = notifications.sender LEFT JOIN accounts ON notifications.type = 'user' AND accounts.id = notifications.receiver WHERE notifications.receiver = ? ORDER BY notifications.createdDay DESC LIMIT 5",
+        [id]
+    );
+
+    const notifications = result[0].map((notification) => {
+        const localizedTimestamp = moment(notification.createdDay).tz(
+            "Asia/Ho_Chi_Minh"
+        );
+        return {
+            ...notification,
+            createdDay: localizedTimestamp.format(),
+        };
+    });
+
+    return notifications.length > 0 ? notifications : null;
+}
+
 const io = new Server(httpServer, {
     cors: {
         origin: CLIENT_HOST,
@@ -26,8 +48,7 @@ const getUser = (userId) => {
 };
 
 const newNotiList = async (userId) => {
-    const result = await classRepository.getNotifications(userId);
-    console.log(result, " chuan bi gui");
+    const result = await getNotifications(userId);
     return result;
 };
 let count = 0;
@@ -44,11 +65,8 @@ io.on("connection", (socket) => {
     });
 
     socket.on("sendClassNotification", async ({ data }) => {
-        console.log(data, " CLASS NOTI DATA");
         for (const rev of data.receiverId) {
-            console.log(rev.userId);
             const receiver = getUser(rev.userId);
-            console.log(receiver);
             if (receiver) {
                 io.to(receiver.socketId).emit("getNotification", {
                     content: await newNotiList(receiver.userId),
@@ -57,11 +75,10 @@ io.on("connection", (socket) => {
         }
     });
 
-    socket.on("sendNotification", ({ senderId, receiverId, type }) => {
+    socket.on("sendNotification", async ({ senderId, receiverId, type }) => {
         const receiver = getUser(receiverId);
-        console.log(type);
         io.to(receiver.socketId).emit("getNotification", {
-            content: newNotiList(receiver.socketId),
+            content: await newNotiList(receiver.userId),
         });
     });
 
