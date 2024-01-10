@@ -5,6 +5,8 @@ const moment = require("moment-timezone");
 const CLIENT_HOST = process.env.CLIENT_HOST || "http://localhost:3000";
 const httpServer = createServer();
 let onlineUsers = []
+require("dotenv").config();
+
 
 const getNotifications = async (id) => {
     const result = await db.connection.execute(
@@ -77,6 +79,7 @@ io.on("connection", (socket) => {
 
     socket.on("sendNotification", async ({ senderId, receiverId, type }) => {
         const receiver = getUser(receiverId);
+        console.log("receiver: ", receiver);
         io.to(receiver.socketId).emit("getNotification", {
             content: await newNotiList(receiver.userId),
         });
